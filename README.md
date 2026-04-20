@@ -1,4 +1,4 @@
-# Email Sender
+# Mass Mailing
 
 Primer avance del proyecto.
 

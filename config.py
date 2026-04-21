@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
+        
 def _leer_bool(clave: str, por_defecto: bool = False) -> bool:
     valor = os.getenv(clave)
     if valor is None:

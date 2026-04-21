@@ -6,7 +6,7 @@ from models import Contact
 
 VALID_STATUSES = ("pending", "processing", "sent", "failed", "invalid")
 
-
+           
 class ContactRepository:
     def __init__(self, db_path: Path):
         self.db_path = db_path

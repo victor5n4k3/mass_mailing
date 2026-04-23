@@ -6,7 +6,7 @@ from models import Contact
 
 VALID_STATUSES = ("pending", "processing", "sent", "failed", "invalid")
 
-           
+
 class ContactRepository:
     def __init__(self, db_path: Path):
         self.db_path = db_path
@@ -19,6 +19,7 @@ class ContactRepository:
     def initialize(self) -> None:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
+            connection.execute("PRAGMA journal_mode=WAL")
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS contactos (

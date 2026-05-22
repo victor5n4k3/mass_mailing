@@ -11,7 +11,12 @@ from models import BatchResult, Contact
 
 
 class Mailer:
-    def __init__(self, settings: Settings, repository: ContactRepository, logger: logging.Logger):
+    def __init__(
+        self,
+        settings: Settings,
+        repository: ContactRepository,
+        logger: logging.Logger,
+    ):
         self.settings = settings
         self.repository = repository
         self.logger = logger
@@ -44,7 +49,13 @@ class Mailer:
     async def _retry_send(self, contact: Contact) -> bool:
         for attempt in range(1, self.settings.max_retries + 1):
             delay = self.settings.retry_base_delay * (2 ** (attempt - 1))
-            self.logger.warning("Voy a reintentar %s en %.1fs", contact.email, delay)
+            self.logger.warning(
+                "Voy a reintentar %s en %.1fs (%s/%s)",
+                contact.email,
+                delay,
+                attempt,
+                self.settings.max_retries,
+            )
             await asyncio.sleep(delay)
 
             smtp = SMTP(**self._smtp_kwargs())
@@ -52,9 +63,15 @@ class Mailer:
                 await smtp.connect()
                 await self._send_once(smtp, contact)
             except Exception as exc:
-                self.logger.warning("El reintento %s fallo para %s: %s", attempt, contact.email, exc)
+                self.logger.warning(
+                    "El reintento %s para %s no salio bien: %s",
+                    attempt,
+                    contact.email,
+                    exc,
+                )
             else:
                 self.repository.update_status(contact.email, "sent")
+                self.logger.info("Correo enviado tras reintento: %s", contact.email)
                 return True
             finally:
                 try:
@@ -68,13 +85,25 @@ class Mailer:
     async def send_batch(self, contacts: list[Contact]) -> BatchResult:
         result = BatchResult(total=len(contacts))
         if not contacts:
+            self.logger.warning("No hay contactos para enviar")
             return result
+
+        self.logger.info(
+            "Iniciando envio de %s contactos a %s/hora",
+            len(contacts),
+            self.settings.emails_per_hour,
+        )
 
         smtp = SMTP(**self._smtp_kwargs())
         try:
             await smtp.connect()
+            self.logger.info(
+                "Conexion SMTP lista en %s:%s",
+                self.settings.smtp_hostname,
+                self.settings.smtp_port,
+            )
 
-            for contact in contacts:
+            for index, contact in enumerate(contacts, start=1):
                 try:
                     contacto_valido = Contact.model_validate(contact.model_dump())
                     await self._send_once(smtp, contacto_valido)
@@ -82,7 +111,9 @@ class Mailer:
                     self.repository.update_status(contact.email, "invalid", str(exc))
                     result.invalid += 1
                     result.failed += 1
+                    self.logger.warning("El contacto %s no paso validacion: %s", contact.email, exc)
                 except (SMTPException, OSError, asyncio.TimeoutError) as exc:
+                    self.logger.error("No pude enviar a %s: %s", contact.email, exc)
                     enviado_tras_reintento = False
                     if self.settings.max_retries > 0:
                         enviado_tras_reintento = await self._retry_send(contact)
@@ -92,9 +123,17 @@ class Mailer:
                     else:
                         self.repository.update_status(contact.email, "failed", str(exc))
                         result.failed += 1
+                except Exception as exc:
+                    self.repository.update_status(contact.email, "failed", str(exc))
+                    result.failed += 1
+                    self.logger.exception("Paso algo inesperado enviando a %s", contact.email)
                 else:
                     self.repository.update_status(contact.email, "sent")
                     result.sent += 1
+                    self.logger.info("[%s/%s] Correo enviado a %s", index, len(contacts), contact.email)
+
+                if index < len(contacts):
+                    await asyncio.sleep(self.settings.delay_between_emails)
         finally:
             try:
                 await smtp.quit()

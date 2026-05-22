@@ -33,21 +33,50 @@ class ContactRepository:
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_contactos_status
+                ON contactos(status)
+                """
+            )
 
     def validate_schema(self) -> tuple[bool, str]:
         if not self.db_path.exists():
             return False, f"No existe la base de datos: {self.db_path}"
 
-        with self._connect() as connection:
-            row = connection.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='contactos'"
-            ).fetchone()
-            if row is None:
-                return False, "La tabla 'contactos' no existe"
+        required_columns = {
+            "email",
+            "nombre",
+            "status",
+            "last_error",
+            "created_at",
+            "updated_at",
+        }
+
+        try:
+            with self._connect() as connection:
+                row = connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='contactos'"
+                ).fetchone()
+                if row is None:
+                    return False, "La tabla 'contactos' no existe"
+
+                columns = {
+                    item["name"]
+                    for item in connection.execute("PRAGMA table_info(contactos)").fetchall()
+                }
+        except sqlite3.Error as exc:
+            return False, f"Error validando la base de datos: {exc}"
+
+        missing_columns = sorted(required_columns - columns)
+        if missing_columns:
+            return False, f"Faltan columnas requeridas: {', '.join(missing_columns)}"
 
         return True, "Base de datos validada"
 
     def claim_pending_contacts(self, limit: int) -> list[Contact]:
+        # Reservamos primero y enviamos despues. Asi evitamos que dos corridas
+        # tomen los mismos contactos al mismo tiempo.
         query = """
             UPDATE contactos
             SET status = 'processing',
@@ -83,3 +112,14 @@ class ContactRepository:
                 """,
                 (status, error_message, email),
             )
+
+    def reset_processing_contacts(self) -> int:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE contactos
+                SET status = 'pending', updated_at = CURRENT_TIMESTAMP
+                WHERE status = 'processing'
+                """
+            )
+            return cursor.rowcount

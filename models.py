@@ -6,10 +6,15 @@ class Contact(BaseModel):
 
     email: EmailStr
     nombre: str = Field(default="Cliente", min_length=1, max_length=255)
-    status: str = Field(default="pending", pattern="^(pending|processing|sent|failed|invalid)$")
+    status: str = Field(
+        default="pending",
+        pattern="^(pending|processing|sent|failed|invalid)$",
+    )
 
 
 class BatchResult(BaseModel):
+    """Resumen del lote para logs y salida final."""
+
     total: int = Field(default=0, ge=0)
     sent: int = Field(default=0, ge=0)
     failed: int = Field(default=0, ge=0)

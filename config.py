@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-        
+
 def _leer_bool(clave: str, por_defecto: bool = False) -> bool:
     valor = os.getenv(clave)
     if valor is None:
@@ -24,7 +24,11 @@ def _leer_bool(clave: str, por_defecto: bool = False) -> bool:
 
 def _leer_entero(clave: str, por_defecto: int, *, minimo: int | None = None) -> int:
     valor_crudo = os.getenv(clave, str(por_defecto))
-    valor = int(valor_crudo)
+    try:
+        valor = int(valor_crudo)
+    except ValueError as exc:
+        raise ValueError(f"{clave} debe ser un entero valido") from exc
+
     if minimo is not None and valor < minimo:
         raise ValueError(f"{clave} debe ser >= {minimo}")
     return valor
@@ -32,7 +36,11 @@ def _leer_entero(clave: str, por_defecto: int, *, minimo: int | None = None) -> 
 
 def _leer_float(clave: str, por_defecto: float, *, minimo: float | None = None) -> float:
     valor_crudo = os.getenv(clave, str(por_defecto))
-    valor = float(valor_crudo)
+    try:
+        valor = float(valor_crudo)
+    except ValueError as exc:
+        raise ValueError(f"{clave} debe ser un numero valido") from exc
+
     if minimo is not None and valor < minimo:
         raise ValueError(f"{clave} debe ser >= {minimo}")
     return valor
@@ -63,16 +71,19 @@ class Settings:
 
 def load_settings() -> Settings:
     correos_por_hora = _leer_entero("EMAILS_PER_HOUR", 250, minimo=1)
-    usar_tls = _leer_bool("SMTP_USE_TLS", False)
-    usar_ssl = _leer_bool("SMTP_USE_SSL", False)
+    smtp_use_tls = _leer_bool("SMTP_USE_TLS", False)
+    smtp_use_ssl = _leer_bool("SMTP_USE_SSL", False)
+
+    if smtp_use_tls and smtp_use_ssl:
+        raise ValueError("SMTP_USE_TLS y SMTP_USE_SSL no pueden estar activos a la vez")
 
     return Settings(
         smtp_hostname=os.getenv("SMTP_HOSTNAME", "localhost").strip(),
         smtp_port=_leer_entero("SMTP_PORT", 25, minimo=1),
         smtp_username=os.getenv("SMTP_USERNAME", "").strip(),
         smtp_password=os.getenv("SMTP_PASSWORD", "").strip(),
-        smtp_use_tls=usar_tls,
-        smtp_use_ssl=usar_ssl,
+        smtp_use_tls=smtp_use_tls,
+        smtp_use_ssl=smtp_use_ssl,
         smtp_timeout=_leer_float("SMTP_TIMEOUT", 15.0, minimo=0.1),
         from_email=os.getenv("FROM_EMAIL", "noreply@example.com").strip(),
         from_name=os.getenv("FROM_NAME", "Sistema de Correos").strip() or "Sistema de Correos",
@@ -96,16 +107,17 @@ def configure_logging(log_level: str, log_file: Path) -> logging.Logger:
 
     nivel = getattr(logging, log_level, logging.INFO)
     log_file.parent.mkdir(parents=True, exist_ok=True)
-    formato = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-    archivo = logging.FileHandler(log_file, encoding="utf-8")
-    archivo.setFormatter(formato)
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-    consola = logging.StreamHandler()
-    consola.setFormatter(formato)
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setFormatter(formatter)
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
 
     logger.setLevel(nivel)
-    logger.addHandler(archivo)
-    logger.addHandler(consola)
+    logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
     logger.propagate = False
     return logger

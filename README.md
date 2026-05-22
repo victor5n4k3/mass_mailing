@@ -1,4 +1,4 @@
-# Codex Email Sender
+# Email Sender
 
 Proyecto de envio masivo por SMTP con SQLite, hecho para que sea facil de correr hoy y tambien facil de entender cuando vuelvas a tocarlo dentro de unos meses.
 
